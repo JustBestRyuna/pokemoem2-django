@@ -1,0 +1,13 @@
+# Django
+*.pyc
+*/*/*/__pycache__/
+*/*/__pycache__/
+*/__pycache__/
+__pycache__
+
+# Misc
+.DS_Store
+pokemoem2/db.sqlite3
+
+# Secrets
+.env

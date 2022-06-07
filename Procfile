@@ -1,0 +1,1 @@
+web: gunicorn pokemoem2.wsgi --log-file -
