@@ -129,10 +129,31 @@ def filter_types(field, term):
                     filter_for_efftype &= ~Q(types__contains=badtype)
                 cur |= filter_for_efftype
         if field == 'types__eff__x1':
+            for type1, type2 in combinations(effective, 2):
+                cur |= Q(types__contains=type1) & Q(types__contains=type2)
+            for efftype in effective:
+                filter_for_efftype = Q(types__contains=efftype)
+                for badtype in not_effective + no_effect:
+                    filter_for_efftype &= ~Q(types__contains=badtype)
+                cur |= filter_for_efftype
             for efftype, badtype in product(effective, not_effective):
                 cur |= Q(types__contains=efftype) & Q(types__contains=badtype)
             for type1, type2 in combinations(neutral, 2):
                 cur |= Q(types__contains=type1) & Q(types__contains=type2)
+        if field == 'types__eff__l1':
+            for efftype, badtype in product(effective, not_effective):
+                cur |= Q(types__contains=efftype) & Q(types__contains=badtype)
+            for type1, type2 in combinations(neutral, 2):
+                cur |= Q(types__contains=type1) & Q(types__contains=type2)
+            for efftype in not_effective:
+                filter_for_efftype = Q(types__contains=efftype)
+                for badtype in effective + no_effect:
+                    filter_for_efftype &= ~Q(types__contains=badtype)
+                cur |= filter_for_efftype
+            for type1, type2 in combinations(not_effective, 2):
+                cur |= Q(types__contains=type1) & Q(types__contains=type2)
+            for type in no_effect:
+                cur |= Q(types__contains=type)
         if field == 'types__eff__l2':
             for efftype in not_effective:
                 filter_for_efftype = Q(types__contains=efftype)
