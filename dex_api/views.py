@@ -276,22 +276,69 @@ def filter_learnset(field, term):
             """, params=()
         )})
 
-    cur = Q()
-    if dots := [i for i in re.finditer('[.]{2}', term)]:
-        gte = term[:dots[0].start()].strip()
-        lte = term[dots[0].end():].strip()
-        if not re.match(regex_number, gte):
-            gte = 1
-        if not re.match(regex_number, lte):
-            lte = 9
-        print(gte, lte)
-        for i in range(int(gte), int(lte) + 1):
-            cur |= filter_gen(field, i)
-    else:
-        if re.match(regex_number, term):
-            cur = filter_gen(field, term)
-    return cur
+    def filter_single_move(field, term):
+        cur = Q()
+        if dots := [i for i in re.finditer('[.]{2}', term)]:
+            gte = term[:dots[0].start()].strip()
+            lte = term[dots[0].end():].strip()
+            if not re.match(regex_number, gte):
+                gte = 1
+            if not re.match(regex_number, lte):
+                lte = 9
+            print(gte, lte)
+            for i in range(int(gte), int(lte) + 1):
+                cur |= filter_gen(field, i)
+        else:
+            if re.match(regex_number, term):
+                cur = filter_gen(field, term)
+        return cur
 
+    if field.find('mult') > -1:
+        q_object = Q()
+        query_filters = PokemoemFilterBackend().get_query_filters(MovesList)
+        filter_regexes = [query_filter for query_filter in query_filters.keys()]
+        # Make a regex that matches if any of our regexes match.
+        combined_regex = "(" + ")|(".join(filter_regexes) + ")"
+        parts = field[15:-1].split(',')
+
+        for i, part in enumerate(parts):
+            # Get the Q object.
+            cur = Q()
+            if match := [i for i in re.finditer('=', part)]:
+                field = part[:match[0].start()].strip()
+                if not re.match(combined_regex, field):
+                    continue
+                if dunder := [i for i in re.finditer('[_]{2}', field)]:
+                    field_cover = field[:dunder[0].start()]
+                else:
+                    field_cover = field
+                field_class = query_filters[field_cover]
+                inside_term = part[match[0].end():].strip()
+
+                cur = Q()
+                if inside_term == '*':
+                    cur = Q(**{field + '__in': RawSQL(f"""
+                        select {field} from moves where jsonb_typeof({field}) <> 'null'""", params=[])})
+                elif isinstance(field_class, (IntegerField, FloatField)):
+                    cur = filter_numberfield(field, inside_term)
+                elif isinstance(field_class, (CharField, TextField)):
+                    cur = filter_textfield(field, inside_term)
+                elif isinstance(field_class, BooleanField):
+                    cur = filter_booleanfield(field, inside_term)
+                elif isinstance(field_class, JSONField):
+                    jsonfield_method = getattr(MovesList, 'jsonfield_method', None)
+                    method = jsonfield_method.get(field_cover, lambda x, y: Q())
+                    cur = method(field, inside_term)
+            q_object &= cur
+
+        moves = Moves.objects.all().filter(q_object)
+        print(moves)
+        cur = Q(pk__in=[])
+        for move in list(moves):
+            newfield = 'learnset__' + move.index
+
+            cur |= filter_single_move(newfield, term)
+        return cur
 
 def filter_fling(field, term):
     if field.find('basepower') > -1:
@@ -342,80 +389,83 @@ def filter_drain(field, term):
 
 
 def filter_zmove(field, term):
-    if field.find('basepower') > -1:
-        cur = filter_numberfield(field, term)
+    cur = filter_numberfield(field + '__basePower', term)
 
-        def find_by_basepower(gte, lte):
-            cur = Q()
-            if 100 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower__lte=55)
-            if 120 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower__gte=60, basepower__lte=65)
-            if 140 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower__gte=70, basepower__lte=75)
-            if 160 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower__gte=80, basepower__lte=85)
-            if 175 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower__gte=90, basepower__lte=95)
-            if 180 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower=100)
-            if 185 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower=110)
-            if 190 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower=120)
-            if 195 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower=130)
-            if 200 in range(gte, lte):
-                cur |= Q(zmove__isnull=True, basepower__gte=140)
-            return cur
+    def find_by_basepower(gte, lte):
+        cur = Q()
+        zmove_isnull = Q(zmove__in=RawSQL("""
+                            select zmove from moves where jsonb_typeof(zmove) = 'null'
+                            """, params=[]))
+        if 100 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower__lte=55)
+        if 120 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower__gte=60, basepower__lte=65)
+        if 140 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower__gte=70, basepower__lte=75)
+        if 160 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower__gte=80, basepower__lte=85)
+        if 175 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower__gte=90, basepower__lte=95)
+        if 180 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower=100)
+        if 185 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower=110)
+        if 190 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower=120)
+        if 195 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower=130)
+        if 200 in range(gte, lte):
+            cur |= zmove_isnull & Q(basepower__gte=140)
+        return cur
 
-        if dots := [i for i in re.finditer('[.]{2}', term)]:
-            gte = term[:dots[0].start()].strip()
-            lte = term[dots[0].end():].strip()
-            if not re.match(regex_number, gte):
-                gte = 100
-            if not re.match(regex_number, lte):
-                lte = 200
-            cur |= find_by_basepower(gte, lte)
-        else:
-            if re.match(regex_number, term):
-                cur = find_by_basepower(term, term)
+    if dots := [i for i in re.finditer('[.]{2}', term)]:
+        gte = term[:dots[0].start()].strip()
+        lte = term[dots[0].end():].strip()
+        if not re.match(regex_number, gte):
+            gte = 100
+        if not re.match(regex_number, lte):
+            lte = 200
+        cur |= find_by_basepower(int(gte), int(lte))
     else:
-        cur = filter_textfield(field, term)
+        if re.match(regex_number, term):
+            cur |= find_by_basepower(int(term), int(term))
     return cur
 
 
 def filter_maxmove(field, term):
-    cur = filter_numberfield(field, term)
+    cur = filter_numberfield(field + '__basePower', term)
 
     def find_by_basepower(gte, lte):
         cur = Q()
-        if 70 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower__lte=40)
-        if 75 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower=50)
-        if 80 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower__gte=55, basepower__lte=60)
-        if 85 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower__gte=65, basepower__lte=70)
-        if 90 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower__gte=75, basepower__lte=100)
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower__lte=40)
-        if 95 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower__gte=110, basepower__lte=140)
-        if 100 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__in=["Fighting", "Poison"], basepower__gte=150)
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower=50)
-        if 110 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower__gte=55, basepower__lte=60)
-        if 120 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower__gte=65, basepower__lte=70)
-        if 130 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower__gte=75, basepower__lte=100)
-        if 140 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower__gte=110, basepower__lte=140)
-        if 150 in range(gte, lte):
-            cur |= Q(maxmove__isnull=True, type__notin=["Fighting", "Poison"], basepower__gte=150)
+        maxmove_isnull = Q(maxmove__in=RawSQL("""
+            select maxmove from moves where jsonb_typeof(maxmove) = 'null'
+            """, params=[]))
+        if gte <= 70 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower__lte=40)
+        if gte <= 75 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower=50)
+        if gte <= 80 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower__gte=55, basepower__lte=60)
+        if gte <= 85 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower__gte=65, basepower__lte=70)
+        if gte <= 90 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower__gte=75, basepower__lte=100)
+            cur |= maxmove_isnull & Q(basepower__lte=40) & ~Q(type__in=["Fighting", "Poison"])
+        if gte <= 95 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower__gte=110, basepower__lte=140)
+        if gte <= 100 <= lte:
+            cur |= maxmove_isnull & Q(type__in=["Fighting", "Poison"], basepower__gte=150)
+            cur |= maxmove_isnull & Q(basepower=50) & ~Q(type__in=["Fighting", "Poison"])
+        if gte <= 110 <= lte:
+            cur |= maxmove_isnull & Q(basepower__gte=55, basepower__lte=60) & ~Q(type__in=["Fighting", "Poison"])
+        if gte <= 120 <= lte:
+            cur |= maxmove_isnull & Q(basepower__gte=65, basepower__lte=70) & ~Q(type__in=["Fighting", "Poison"])
+        if gte <= 130 <= lte:
+            cur |= maxmove_isnull & Q(basepower__gte=75, basepower__lte=100) & ~Q(type__in=["Fighting", "Poison"])
+        if gte <= 140 <= lte:
+            cur |= maxmove_isnull & Q(basepower__gte=110, basepower__lte=140) & ~Q(type__in=["Fighting", "Poison"])
+        if gte <= 150 <= lte:
+            cur |= maxmove_isnull & Q(basepower__gte=150) & ~Q(type__in=["Fighting", "Poison"])
         return cur
 
     if dots := [i for i in re.finditer('[.]{2}', term)]:
@@ -425,10 +475,11 @@ def filter_maxmove(field, term):
             gte = 70
         if not re.match(regex_number, lte):
             lte = 150
-        cur &= find_by_basepower(gte, lte)
+        cur |= find_by_basepower(int(gte), int(lte))
     else:
         if re.match(regex_number, term):
-            cur = find_by_basepower(term, term)
+            cur |= find_by_basepower(int(term), int(term))
+    print(cur)
     return cur
 
 
@@ -526,7 +577,7 @@ class PokemoemFilterBackend(filters.BaseFilterBackend):
                 cur = Q()
                 if term == '*':
                     cur = Q(**{field + '__isnull': False})
-                if isinstance(field_class, (IntegerField, FloatField)):
+                elif isinstance(field_class, (IntegerField, FloatField)):
                     cur = filter_numberfield(field, term)
                 elif isinstance(field_class, (CharField, TextField)):
                     cur = filter_textfield(field, term)
@@ -544,7 +595,6 @@ class PokemoemFilterBackend(filters.BaseFilterBackend):
             else:
                 q_object = q_object & ~cur
 
-        print(q_object)
         return queryset.filter(q_object)
 
 
