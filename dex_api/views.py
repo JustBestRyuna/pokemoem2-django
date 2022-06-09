@@ -269,6 +269,7 @@ def filter_abilities(field, term):
 def filter_learnset(field, term):
     def filter_gen(field, term):
         move_name = field[10:]
+        print(move_name)
         return Q(**{'learnset__in': RawSQL(
             f"""
             select learnset from (select * from pokedex where jsonb_typeof(learnset) <> 'null') as pd
@@ -293,7 +294,7 @@ def filter_learnset(field, term):
                 cur = filter_gen(field, term)
         return cur
 
-    if field.find('mult') > -1:
+    if field.find('learnset__mult') > -1:
         q_object = Q()
         query_filters = PokemoemFilterBackend().get_query_filters(MovesList)
         filter_regexes = [query_filter for query_filter in query_filters.keys()]
@@ -339,6 +340,9 @@ def filter_learnset(field, term):
 
             cur |= filter_single_move(newfield, term)
         return cur
+    else:
+        return filter_single_move(field, term)
+
 
 def filter_fling(field, term):
     if field.find('basepower') > -1:
