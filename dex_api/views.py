@@ -269,7 +269,6 @@ def filter_abilities(field, term):
 def filter_learnset(field, term):
     def filter_gen(field, term):
         move_name = field[10:]
-        print(move_name)
         return Q(**{'learnset__in': RawSQL(
             f"""
             select learnset from (select * from pokedex where jsonb_typeof(learnset) <> 'null') as pd
@@ -286,7 +285,6 @@ def filter_learnset(field, term):
                 gte = 1
             if not re.match(regex_number, lte):
                 lte = 9
-            print(gte, lte)
             for i in range(int(gte), int(lte) + 1):
                 cur |= filter_gen(field, i)
         else:
@@ -309,11 +307,7 @@ def filter_learnset(field, term):
                 field = part[:match[0].start()].strip()
                 if not re.match(combined_regex, field):
                     continue
-                if dunder := [i for i in re.finditer('[_]{2}', field)]:
-                    field_cover = field[:dunder[0].start()]
-                else:
-                    field_cover = field
-                field_class = query_filters[field_cover]
+                field_class = query_filters[field]
                 inside_term = part[match[0].end():].strip()
 
                 cur = Q()
@@ -328,7 +322,7 @@ def filter_learnset(field, term):
                     cur = filter_booleanfield(field, inside_term)
                 elif isinstance(field_class, JSONField):
                     jsonfield_method = getattr(MovesList, 'jsonfield_method', None)
-                    method = jsonfield_method.get(field_cover, lambda x, y: Q())
+                    method = jsonfield_method.get(field, lambda x, y: Q())
                     cur = method(field, inside_term)
             q_object &= cur
 
@@ -337,7 +331,6 @@ def filter_learnset(field, term):
         cur = Q(pk__in=[])
         for move in list(moves):
             newfield = 'learnset__' + move.index
-
             cur |= filter_single_move(newfield, term)
         return cur
     else:
@@ -488,18 +481,18 @@ def filter_maxmove(field, term):
 
 
 def filter_recoil(field, term):
-    if term == 50:
+    if term == '50':
         return Q(recoil__1=2)
-    elif term == 33:
+    elif term == '33':
         return Q(recoil__1=100)
-    elif term == 25:
+    elif term == '25':
         return Q(recoil__1=4)
     else:
         return Q()
 
 
 def filter_multihit(field, term):
-    if term == 5:
+    if term == '5':
         return Q(multihit__1=term)
     else:
         return Q(multihit=term)
@@ -515,9 +508,9 @@ def filter_ismax(field, term):
 
 
 def filter_heal(field, term):
-    if term == 50:
+    if term == '50':
         return Q(heal__1=2)
-    elif term == 25:
+    elif term == '25':
         return Q(heal__1=4)
     else:
         return Q()
